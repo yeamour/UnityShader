@@ -1,11 +1,12 @@
-﻿Shader "UnityShader/10.1.3"
+﻿Shader "UnityShader/10/Refract"
 {
 	Properties
 	{
-		_Color ("Color Tint", Color) = (1, 1, 1, 1)
-		_ReflectColor ("Reflection Color", Color) = (1, 1, 1, 1)
-		_ReflectAmount ("Reflect Amount", Range(0, 1)) = 1
-		_CubeMap("Reflection CubMap", Cube) = "_Skybox" {}
+		_Color("Main Color", Color) = (1, 1, 1, 1)
+		_CubeMap("CubeMap", Cube) = "_Skybox" {}
+		_RefractRatio("Refract Ratio", Range(0.1, 1)) = 0.5
+		_RefractColor ("Refract Color", Color) = (1, 1, 1, 1)
+		_RefractAmount("Refract Amount", Range(0.1, 1)) = 1
 	}
 	SubShader
 	{
@@ -14,14 +15,12 @@
 
 		Pass
 		{
-			Tags{ "LightMode" = "ForwardBase" }
-
+			Tags {"LightMode" = "ForwardBase"}
 			CGPROGRAM
 			#pragma multi_compile_fwdbase
 			#pragma vertex vert
 			#pragma fragment frag
 			
-			#include "UnityCG.cginc"
 			#include "Lighting.cginc"
 			#include "AutoLight.cginc"
 
@@ -35,14 +34,16 @@
 			{
 				float3 worldPos : TEXCOORD0;
 				float3 worldNormal : TEXCOORD1;
-				float3 worldReflect : TEXCOORD2;
+				float3 worldRefract : TEXCOOED2;
 				float4 vertex : SV_POSITION;
+				SHADOW_COORDS(3)
 			};
 
 			fixed4 _Color;
-			fixed4 _ReflectColor;
-			fixed _ReflectAmount;
 			samplerCUBE _CubeMap;
+			fixed _RefractRatio;
+			fixed4 _RefractColor;
+			fixed _RefractAmount;
 			
 			v2f vert (appdata v)
 			{
@@ -51,7 +52,7 @@
 				o.worldPos = mul(_Object2World, v.vertex).xyz;
 				o.worldNormal = UnityObjectToWorldNormal(v.normal);
 				float3 worldViewDir = UnityWorldSpaceViewDir(o.worldPos);
-				o.worldReflect = reflect(-worldViewDir, o.worldNormal);
+				o.worldRefract = refract(-normalize(worldViewDir), normalize(o.worldNormal), _RefractRatio);
 				return o;
 			}
 			
@@ -59,14 +60,12 @@
 			{
 				fixed3 worldNormal = normalize(i.worldNormal);
 				fixed3 worldLightDir = normalize(UnityWorldSpaceLightDir(i.worldPos));
-
 				fixed3 ambient = UNITY_LIGHTMODEL_AMBIENT.xyz;
-				fixed3 diffuse = _LightColor0.rgb * _Color * max(0, dot(worldNormal, worldLightDir));
-				fixed3 reflectColor = _ReflectColor * texCUBE(_CubeMap, i.worldReflect);
-
-				//UNITY_LIGHT_ATTENUATION(atten, i, i.worldPos);
-				fixed3 col = ambient + lerp(diffuse, reflectColor, _ReflectAmount);
-				return fixed4(col.xyz, 1);
+				fixed3 diffuse = _LightColor0.rgb * _Color.rgb * max(0, dot(i.worldNormal, worldLightDir));
+				fixed3 refractColor = texCUBE(_CubeMap, i.worldRefract) * _RefractColor.rgb;
+				UNITY_LIGHT_ATTENUATION(atten, i, i.worldPos);
+				fixed3 color = ambient + lerp(diffuse, refractColor, _RefractAmount) * atten;
+				return fixed4(color, 1);
 			}
 			ENDCG
 		}
